@@ -1,0 +1,88 @@
+// uart_tx_rx_wrapper.v - UART receiver to pass fault flags to ESP32
+`timescale 1ns / 1ps
+
+module uart_rx_wrapper (
+    input wire clk,           // 50MHz
+    input wire rst,
+    input wire uart_rx,       // Serial input from ESP32 (or to ESP32)
+    output reg [7:0] fault_flags_out,
+    output reg new_data_flag
+);
+
+localparam CLK_FREQ = 50_000_000;
+localparam BAUD = 115200;
+localparam BIT_PERIOD = CLK_FREQ / BAUD;
+
+reg [31:0] bit_count_timer;
+reg [3:0] bit_idx;
+reg uart_rx_sync;
+reg [7:0] shift_reg;
+reg sample_enable;
+
+typedef enum logic [2:0] {
+    IDLE, START, RECEIVE, STOP
+} rx_state_t;
+
+rx_state_t rx_state, next_rx_state;
+
+always @(posedge clk or posedge rst) begin
+    if (rst) begin
+        rx_state <= IDLE;
+        bit_count_timer <= 0;
+        bit_idx <= 0;
+        shift_reg <= 0;
+        uart_rx_sync <= 1;
+        new_data_flag <= 0;
+    end else begin
+        uart_rx_sync <= uart_rx;
+        rx_state <= next_rx_state;
+
+        if (sample_enable && (bit_count_timer < BIT_PERIOD-1))
+            bit_count_timer <= bit_count_timer + 1;
+        else
+            bit_count_timer <= 0;
+
+        if (rx_state == RECEIVE && sample_enable && bit_count_timer == BIT_PERIOD-1) begin
+            shift_reg[bit_idx] <= uart_rx_sync;
+            bit_idx <= bit_idx + 1;
+        end
+
+        if (next_rx_state == UPDATE_OUTPUT)
+            fault_flags_out <= shift_reg;
+
+        new_data_flag <= (next_rx_state == UPDATE_OUTPUT);
+    end
+end
+
+always_comb begin
+    next_rx_state = rx_state;
+    sample_enable = 0;
+
+    case (rx_state)
+        IDLE:
+            if (!uart_rx_sync)
+                next_rx_state = START;
+
+        START:
+            if (bit_count_timer == BIT_PERIOD-1) begin
+                sample_enable = 1;
+                next_rx_state = RECEIVE;
+            end
+
+        RECEIVE:
+            if (bit_idx == 8 && bit_count_timer == BIT_PERIOD-1)
+                next_rx_state = STOP;
+
+        STOP:
+            if (uart_rx_sync)
+                next_rx_state = UPDATE_OUTPUT;
+
+        UPDATE_OUTPUT:
+            next_rx_state = IDLE;
+
+        default:
+            next_rx_state = IDLE;
+    endcase
+end
+
+endmodule

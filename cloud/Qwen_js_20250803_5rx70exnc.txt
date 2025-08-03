@@ -1,0 +1,34 @@
+// cloud/api_gateway/server.js
+const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
+const mqtt = require('mqtt');
+
+const app = express();
+const server = http.createServer(app);
+const io = socketIo(server);
+
+// MQTT Client (subscribe to ESP32)
+const mqttClient = mqtt.connect('mqtt://broker.hivemq.com');
+mqttClient.subscribe('udig/faults');
+
+mqttClient.on('message', (topic, message) => {
+  try {
+    const data = JSON.parse(message.toString());
+    io.emit('fault_update', data);
+  } catch (e) {
+    console.error("Parse error:", e);
+  }
+});
+
+// REST endpoint for direct logging
+app.use(express.json());
+app.post('/log', (req, res) => {
+  const { flags, ts } = req.body;
+  io.emit('fault_update', { flags, ts: ts || Date.now() });
+  res.status(200).send("Logged");
+});
+
+server.listen(3000, () => {
+  console.log("Dashboard API running on http://localhost:3000");
+});

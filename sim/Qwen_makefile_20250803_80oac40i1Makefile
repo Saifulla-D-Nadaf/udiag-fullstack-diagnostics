@@ -1,0 +1,20 @@
+# sim/Makefile
+VERILOG_SOURCES = ../rtl/sensors_sim.v ../rtl/fault_detector_fsm.v ../rtl/top_module.v ../rtl/uart_loopback_tx.v
+SYSTEMVERILOG_SOURCES = ../rtl/sensors_sim.v ../rtl/fault_detector_fsm.v ../tb/tb_fault_detector.sv
+
+all: basic simv
+
+basic:
+    verilator --cc tb/tb_sensors.v --exe --top-module tb_sensors
+    make -C obj_dir -f Vtb_sensors.mk
+    ./obj_dir/Vtb_sensors
+    gtkwave tb_sensors.vcd &
+
+simv:
+    verilator --sv --cc tb/tb_fault_detector.sv --exe --top-module tb_fault_detector_sv
+    make -C obj_dir -f Vtb_fault_detector_sv.mk
+    ./obj_dir/Vtb_fault_detector_sv
+    gtkwave tb_fault_detector.vcd &
+
+clean:
+    rm -rf obj_dir/ *.vcd

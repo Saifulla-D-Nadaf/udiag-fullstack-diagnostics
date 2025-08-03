@@ -1,0 +1,30 @@
+// tb/tb_sensors.v
+`timescale 1ns / 1ps
+
+module tb_sensors();
+
+reg clk, rst;
+wire [9:0] temp_raw, volt_raw;
+
+// DUT
+top_module dut (
+    .clk(clk),
+    .rst(rst),
+    .uart_rx_pin(1'b1),
+    .fault_flags_leds(),
+    .uart_tx_to_mc()
+);
+
+always #5 clk = ~clk;
+
+initial begin
+    $dumpfile("tb_sensors.vcd");
+    $dumpvars(0, tb_sensors);
+
+    clk = 0;
+    rst = 1;
+    #20 rst = 0;
+    #1000 $finish;
+end
+
+endmodule

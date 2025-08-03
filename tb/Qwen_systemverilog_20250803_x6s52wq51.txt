@@ -1,0 +1,78 @@
+// tb/tb_fault_detector.sv
+`timescale 1ns / 1ps
+
+module tb_fault_detector_sv();
+
+parameter CLK_PERIOD = 10;
+
+logic clk, rst;
+logic [9:0] temp, volt;
+logic [7:0] fault_flags;
+
+// DUT
+fault_detector_fsm dut (
+    .clk(clk),
+    .rst(rst),
+    .temp(temp),
+    .volt(volt),
+    .fault_flags(fault_flags)
+);
+
+// Clock generation
+always #(CLK_PERIOD/2) clk = ~clk;
+
+// Covergroup
+covergroup fault_coverage;
+    option.per_instance = 1;
+    temp_high: coverpoint temp > 130;
+    temp_low:  coverpoint temp < 20;
+    volt_high: coverpoint volt > 110;
+    volt_low:  coverpoint volt < 90;
+    fault_combi: cross temp_high, temp_low, volt_high, volt_low;
+endgroup
+
+fault_coverage cov = new();
+
+// Assertions
+property p_temp_high;
+    @(posedge clk) (temp > 130) |=> fault_flags[0] == 1;
+endproperty
+
+property p_temp_low;
+    @(posedge clk) (temp < 20) |=> fault_flags[1] == 1;
+endproperty
+
+assert_temp_high: assert property (p_temp_high) else $warning("Temp high not flagged!");
+assert_temp_low:  assert property (p_temp_low)  else $warning("Temp low not flagged!");
+
+initial begin
+    $dumpfile("tb_fault_detector.vcd");
+    $dumpvars(0, tb_fault_detector_sv);
+
+    clk = 0;
+    rst = 1;
+    temp = 100;
+    volt = 100;
+
+    #20 rst = 0;
+
+    // Randomized test
+    repeat (100) begin
+        @(posedge clk);
+        temp = $urandom_range(0, 200);
+        volt = $urandom_range(50, 150);
+        cov.sample();
+    end
+
+    // Force fault cases
+    @(posedge clk) temp = 140; // Overheat
+    @(posedge clk) temp = 10;  // Too cold
+    @(posedge clk) volt = 115; // Overvoltage
+    @(posedge clk) volt = 85;  // Undervoltage
+
+    #100;
+    $display("Coverage: %0.2f%%", cov.get_coverage());
+    $finish;
+end
+
+endmodule

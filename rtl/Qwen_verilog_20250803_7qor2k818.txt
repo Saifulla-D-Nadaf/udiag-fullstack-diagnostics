@@ -1,0 +1,79 @@
+// fault_detector_fsm.v - FSM to detect over/under thresholds
+`timescale 1ns / 1ps
+
+module fault_detector_fsm (
+    input wire clk,
+    input wire rst,
+    input wire [9:0] temp,      // 10-bit temp (e.g., 10x degrees)
+    input wire [9:0] volt,      // 10-bit voltage (e.g., 10x volts)
+    output reg [7:0] fault_flags // Bit-encoded faults
+);
+
+// Thresholds (configurable)
+localparam TEMP_HIGH = 130;  // >130°C
+localparam TEMP_LOW  = 20;   // <20°C
+localparam VOLT_HIGH = 110;  // >11.0V
+localparam VOLT_LOW  = 90;   // <9.0V
+
+// Fault flag bits
+localparam F_TEMP_HIGH = 0;
+localparam F_TEMP_LOW  = 1;
+localparam F_VOLT_HIGH = 2;
+localparam F_VOLT_LOW  = 3;
+
+typedef enum logic [2:0] {
+    IDLE,
+    CHECK_TEMP,
+    CHECK_VOLT,
+    UPDATE_FLAGS,
+    WAIT_CYCLE
+} state_t;
+
+state_t state, next_state;
+
+always @(posedge clk or posedge rst) begin
+    if (rst)
+        state <= IDLE;
+    else
+        state <= next_state;
+end
+
+always_comb begin
+    next_state = state;
+    fault_flags = 8'b0;
+
+    case (state)
+        IDLE:
+            next_state = CHECK_TEMP;
+
+        CHECK_TEMP: begin
+            fault_flags[F_TEMP_HIGH] = (temp > TEMP_HIGH);
+            fault_flags[F_TEMP_LOW]  = (temp < TEMP_LOW);
+            next_state = CHECK_VOLT;
+        end
+
+        CHECK_VOLT: begin
+            fault_flags[F_VOLT_HIGH] = (volt > VOLT_HIGH);
+            fault_flags[F_VOLT_LOW]  = (volt < VOLT_LOW);
+            next_state = UPDATE_FLAGS;
+        end
+
+        UPDATE_FLAGS: begin
+            // Keep flags active until cleared externally
+            fault_flags = {
+                (temp > TEMP_HIGH), (temp < TEMP_LOW),
+                (volt > VOLT_HIGH), (volt < VOLT_LOW),
+                4'b0  // Reserved
+            };
+            next_state = WAIT_CYCLE;
+        end
+
+        WAIT_CYCLE:
+            next_state = IDLE;
+
+        default:
+            next_state = IDLE;
+    endcase
+end
+
+endmodule
